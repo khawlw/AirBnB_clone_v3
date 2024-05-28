@@ -1,69 +1,70 @@
-ndles REST API actions for Place Amenity
-"""
-from api.v1.views import app_views
+#!/usr/bin/python3
+"""Define Place Amenities Routes"""
 from os import getenv
-from flask import jsonify
-from flask import Flask
-from flask import request
-from flask import abort
+from api.v1.views import app_views
+from flask import abort, jsonify, request
 from models import storage
-from models.place import Place
 from models.amenity import Amenity
+from models.place import Place
 
 
-@app_views.route(
-    '/places/<string:place_id>/amenities',
-    methods=['GET'],
-    strict_slashes=False)
-def place_amenity(place_id):
-    """handles amenities route"""
+@app_views.route("/places/<place_id>/amenities", methods=["GET"])
+def place_amenities(place_id):
+    """Defines places/<place_id>/amenities/<amenity_id> with GET method
+
+    GET - Get all Amenities related to a given place_id
+    """
     place = storage.get("Place", place_id)
     if place is None:
         abort(404)
-    if getenv('HBNB_TYPE_STORAGE') != 'db':
-        return jsonify(place.amenity_ids)
-    return jsonify([p_a.to_dict() for p_a in place.amenities])
+
+    # GET
+    if request.method == "GET":
+        return jsonify([amenity.to_dict() for amenity in place.amenities])
 
 
-@app_views.route(
-    '/places/<string:place_id>/amenities/<string:amenity_id>',
-    methods=['POST'],
-    strict_slashes=False)
-def place_amenity_post(place_id, amenity_id):
+@app_views.route("/places/<place_id>/amenities/<amenity_id>",
+                 methods=["POST", "DELETE"])
+def place_amenity(place_id, amenity_id):
+    """Define places/<place_id>/amenities/<amenity_id>
+    with POST and DELETE methods
+
+    DELETE - Deletes a Review  with the given id
+    POST - link an amenity to a place
+    """
     place = storage.get("Place", place_id)
     amenity = storage.get("Amenity", amenity_id)
     if place is None or amenity is None:
         abort(404)
-    in_list_fs = True
-    if getenv('HBNB_TYPE_STORAGE') != 'db':
-        if amenity_id not in place.amenity_ids:
-            in_list_fs = False
-    if amenity in place.amenities and in_list_fs:
-        return jsonify(amenity.to_dict()), 200
-    if getev('HBNB_TYPE_STORAGE') != 'db':
-        place.amenity_ids.append(amenity_id)
-    else:
-        place.amenities.append(amenity)
-    storage.save()
-    return jsonify(amenity.to_dict()), 201
 
+    already_exist = False
+    # POST
+    if request.method == "POST":
+        if getenv("HBNB_TYPE_STORAGE", None) == "db":
+            # Storage type db
+            if amenity not in place.amenities:
+                place.amenities.append(amenity)
+            else:
+                already_exist = True
+        else:
+            # Storgae type file
+            if amenity.id not in place.amenity_ids:
+                place.amenity_ids.append(amenity_id)
+            else:
+                already_exist = True
+        place.save()
+        return jsonify(amenity.to_dict()), (201 if not already_exist else 200)
 
-@app_views.route(
-    '/places/<string:place_id>/amenities/<string:amenity_id>',
-    methods=['DELETE'],
-    strict_slashes=False)
-def place_amenity_with_id(place_id, amenity_id):
-    """handles amenities route with a parameter amenity_id"""
-    amenity = storage.get("Amenity", amenity_id)
-    place = storage.get("Place", place_id)
-    if place is None or amenity is None:
-        abort(404)
-    if amenity not in place.amenities:
-        abort(404)
-    if getenv('HBNB_TYPE_STORAGE') != 'db':
-        if amenity_id in place.amenity_ids:
-            place.amenity_ids.pop(amenity_id)
-    elif amenity in place.amenities:
+    # DELETE
+    if getenv("HBNB_TYPE_STORAGE", None) == "db":
+        # Storage type db
+        if amenity not in place.amenities:
+            abort(404)
         place.amenities.remove(amenity)
-    storage.save()
-    return jsonify({}), 200
+    else:
+        # Storgae type file
+        if amenity.id not in place.amenity_ids:
+            abort(404)
+        place.amenity_ids.remove(amenity_id)
+    place.save()
+    return jsonify({})
